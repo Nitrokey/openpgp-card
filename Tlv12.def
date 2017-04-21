@@ -1,0 +1,203 @@
+Rem BasicCard TLV Library
+Rem ------------------------------------------------------------------
+Rem Copyright (C) 2008 ZeitControl GmbH
+Rem You have a royalty-free right to use, modify, reproduce and 
+Rem distribute the Sample Application Files (and/or any modified 
+Rem version) in any way you find useful, provided that you agree 
+Rem that ZeitControl GmbH has no warranty, obligations or liability
+Rem for any Sample Application Files.
+Rem ------------------------------------------------------------------
+
+#IfNotDef TlvDefIncluded ' Prevent multiple inclusion
+Const TlvDefIncluded = True
+
+Type TlvPointer
+   Start as Integer
+   Tag as Integer
+   Length as Integer
+   ' Info contains following information:
+   '     Bit 0 to 3 Offset of Value Field
+   '     Bit 7 to 6 Tag Class
+   '     Bit 5 constructed indicator - 1 constructed, 0 primitive
+   '     Bit 4 valid indicator - 1 valid, 0 invalid
+   Info as Byte
+End Type
+
+' Tlv Error codes
+Const TlvENoError=0 ' No error
+Const TlvEInvalid=1 ' Invalid or unsupported TLV object
+Const TlvENoMoreObjects=2 ' No more tlv objects follow
+Const TlvENotConstructed=3 ' The parent object is a primitive TLV which does not contain childs
+
+' Moves the Ptr to next object if exists, reading tag and length too.
+' Data is expected to hold the TLV object(s) as string on input.
+' If EndPos is < 0 (-1) the end position is defined by data,
+' otherwise this specifies then end position for searching objects.
+' This means objects are valid up to Data(EndPos-1).
+' 0 bytes within Data beginning at current start position are regarded as
+' padding and are skipped.
+' The function return one of specified Tlv Error Codes
+Declare Function TlvNextObject(ByRef Ptr as TlvPointer, ReadOnly Data as String, ByVal EndPos as Integer) as Byte
+
+' Find next child tlv object within (constructed) Parent and put the result into Child.
+' Data is expected to hold the TLV object(s) as string on input.
+' If on input Child.Info = 0 then first child of parent is searched for.
+' Otherwise Child is expected to contain preceeding child object on input.
+' 0 bytes at end of preceeding child are regarded as padding and are skipped.
+' The next child object is returned in Child on output.
+' The function return one of specified Tlv Error Codes
+Declare Function TlvNextChild(ReadOnly Parent as TlvPointer, ByRef Child as TlvPointer, ReadOnly Data as String)
+
+' Find Nth (>=1) next child tlv object within (constructed) Parent which matches specified Tag and put the result into Child.
+' If on input Child.Info = 0 then first child of parent is searched for.
+' Otherwise Child is expected to contain preceeding child object on input.
+' Data is expected to hold the TLV object(s) as string on input.
+' 0 bytes at start of parent value are regarded as padding and are skipped.
+' The function return one of specified Tlv Error Codes
+Declare Function TlvMatchingChild(ReadOnly Parent as TlvPointer, ByRef Child as TlvPointer, ReadOnly Data as String, _
+                                  ByVal Tag as Integer, ByVal N as Integer)
+
+' Read tag length and info from Data string and put this into Ptr.
+' Data is expected to hold the TLV object(s) as string on input.
+' Ptr.Start is expected to be valid and point to start position
+' of desired TLV object within Data string.
+' The function return one of specified Tlv Error Codes
+Declare Function TlvReadTagLength(ByRef Ptr as TlvPointer, ReadOnly Data as String) as Byte
+
+' Get the value pointed to by Ptr.
+' Data is expected to hold the TLV object(s) as string on input.
+' If the pointer Ptr is invalid an empty string is returned.
+Declare Function TlvGetValue(ReadOnly Ptr as TlvPointer, ReadOnly Data as String) as String
+
+' Create a TLV object with specified content
+Declare Function TlvCreateObject(ByVal Tag as Integer, ReadOnly Value as String) as String
+
+
+Function TlvGetValue(ReadOnly Ptr as TlvPointer, ReadOnly Data as String) as String
+   if (Ptr.Info AND &H10)=0 then TlvGetValue="" : exit function
+   Private Pos as Integer
+   Pos=Ptr.Start + (Ptr.Info AND &H0F) 
+   TlvGetValue=Mid$(Data, Pos, Ptr.Length)
+End Function
+
+Function TlvMatchingChild(ReadOnly Parent as TlvPointer, ByRef Child as TlvPointer, ReadOnly Data as String, _
+                          ByVal Tag as Integer, ByVal N as Integer)
+   if N<1 then TlvMatchingChild=TlvEInvalid : exit function
+   TlvMatchingChild=TlvNextChild(Parent, Child, Data)
+   while (TlvMatchingChild=TlvENoError) AND (N>0)
+      if Tag=Child.Tag then
+         N=N-1
+      end if
+      if N>0 then TlvMatchingChild=TlvNextChild(Parent, Child, Data)
+   wend
+End Function
+
+Function TlvNextChild(ReadOnly Parent as TlvPointer, ByRef Child as TlvPointer, ReadOnly Data as String)
+   if (Parent.Info AND &H20) = 0 then TlvNextChild=TlvENotConstructed : exit function
+   TlvNextChild=TlvEInvalid
+   if (Parent.Info AND &H30) <> &H30 then exit function
+   Private EndPos as Integer
+   EndPos=Parent.Start + (Parent.Info AND &H0F) + Parent.Length
+   if Child.Info=0 then
+      Child.Start=Parent.Start + (Parent.Info AND &H0F) 
+      Child.Info=&H10
+      Child.Length=0
+   end if
+   if (Child.Info AND &H10) = 0 then exit function
+   TlvNextChild=TlvNextObject(Child, Data, EndPos)
+End Function
+
+Function TlvNextObject(ByRef Ptr as TlvPointer, ReadOnly Data as String, ByVal EndPos as Integer) as Byte
+   TlvNextObject=TlvEInvalid
+   if EndPos<0 then EndPos=Len(Data)+1
+   if (EndPos-1)>Len(Data) then exit function
+   if (Ptr.Info AND &H10) = 0 then exit function
+   Ptr.Start=Ptr.Start + (Ptr.Info AND &H0F) + Ptr.Length
+   while (Ptr.Start<EndPos) AND (0=Asc(Data(Ptr.Start)))
+      Ptr.Start=Ptr.Start+1
+   wend
+   if Ptr.Start=EndPos then
+      Ptr.Info=0
+      TlvNextObject=TlvENoMoreObjects
+   else
+      TlvNextObject=TlvReadTagLength(Ptr, Data)
+   end if
+End Function
+
+Function TlvCreateObject(ByVal Tag as Integer, ReadOnly Value as String) as String
+   Private temp as Integer
+   TlvCreateObject=""
+   temp=Tag
+   if temp<0 then temp=-temp
+   temp=(temp / 256) AND &H00FF
+   if temp<>0 then TlvCreateObject=Chr$(temp)
+   TlvCreateObject=TlvCreateObject+Chr$(Tag AND &H00FF)
+   temp=Len(Value)
+   if temp>&HFF then
+      TlvCreateObject=TlvCreateObject+Chr$(&H82)+Chr$((temp / 256) AND &H00FF) +Chr$(temp AND &H00FF)+Value
+   else : if temp>&H7F then
+      TlvCreateObject=TlvCreateObject+Chr$(&H81)+Chr$(temp)+Value
+   else
+      TlvCreateObject=TlvCreateObject+Chr$(temp)+Value
+   end if : end if
+End Function
+
+Function TlvReadTagLength(ByRef Ptr as TlvPointer, ReadOnly Data as String) as Byte
+   Private Pos as Integer
+   Pos=Ptr.Start
+   TlvReadTagLength=TlvEInvalid
+   if Pos>Len(Data) then exit function
+   ' First byte is always Tag with class and constructed/prinmitive flag
+   Ptr.Tag=Asc(Data(Pos))
+   Ptr.Info=Ptr.Tag AND &HE0
+   ' Next position
+   Pos=Pos+1
+   if Pos>Len(Data) then exit function
+   if (Ptr.Tag AND &H1F)=&H1F then
+      ' xxx11111 in first byte indicate second tag byte
+      ' take care of values with top bit set 
+      ' 16 bit signed integer will overflow otherwise
+      if (Ptr.Tag AND &H80) > 0 then Ptr.Tag=-Ptr.Tag
+      ' add second tag byte
+      Ptr.Tag=Ptr.Tag*256 + Asc(Data(Pos))
+      ' top bit in second tag byte will indicate more
+      ' tag bytes. this is not supported
+      if (Ptr.Tag AND &H80) > 0 then exit function
+      ' Next position
+      Pos=Pos+1
+      if Pos>Len(Data) then exit function
+   end if
+   ' Parse length element
+   Ptr.Length=Asc(Data(Pos))
+   select case Ptr.Length
+      case &H81
+         ' next byte length
+         if (Pos+1)>Len(Data) then exit function 
+         Ptr.Length=Asc(Data(Pos+1))
+         Pos=Pos+2
+         exit case
+      case &H82
+         ' next 2 byte length
+         if (Pos+2)>Len(Data) then exit function 
+         Ptr.Length=Asc(Data(Pos+1))
+         ' Length >= 2^15 not supported
+         if (Ptr.Length AND &HC0) > 0 then exit function
+         Ptr.Length=Ptr.Length * 256 + Asc(Data(Pos+2))
+         ' Next position
+         Pos=Pos+3
+         exit case
+      case &H83, &H84
+         ' 3, 4, or 5 byte length not supported
+         exit function
+      case else
+         ' Next position
+         Pos=Pos+1
+         if Pos>Len(Data) then exit function
+         exit case
+   end select
+   if (Ptr.Length + Pos - 1) > Len(Data) then exit function
+   Ptr.Info = Ptr.Info + &H10 + (Pos - Ptr.Start)
+   TlvReadTagLength=TlvENoError
+End Function
+
+#EndIf ' TlvDefIncluded

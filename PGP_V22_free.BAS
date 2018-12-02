@@ -1,10 +1,7 @@
-' BasicCard (7.5) source code for OpenPGP smart card
-' Version 2.1
-' Copyright (C)2015
-' Achim Pietig <openpgp@pietig.com>
-' No Secure Messaging
-' No AES decrypt
-' New TERMINATE
+Rem BasicCard (7.5_D) Source Code for OpenPGP Card
+Rem Version 2.2
+Rem Copyright (C)2018 Achim Pietig (openpgp@pietig.com)
+Rem All commands, functions and DOs from the V2.2 specification, except Secure Messaging
 
 ' License:
 '
@@ -39,15 +36,14 @@
 ' This source can be compiled with the free BasicCard development kit from Zeitcontrol (www.basiccard.com).
 ' Blank cards in small volumes can be ordered there also.
 '
-' This source code has the same functionality than my professional version sold by kernel concepts (www.kernelconcepts.de) or used with the Cryptpostick (www.nitrokey.com/), but has not the same security.
+' This source code has the same functionality than the sold version, but has no internal security hardenings. All lines with these additional checks are deleted, the remaining code is identical.
 ' Smart card programming differs from normal source code for e. g. PCs, because there are several hardware attacks against the content of a smart card (e. g. Power fail attack, DPA, DFA).
-' The knowledge to protect a card against these attacks was given to me is under NDA (e. g. from chip vendors) and I cannot provide it.
+' The knowledge/code to protect a card against these attacks was given to me under NDA.
 ' An example of an expired patent can be found in the VERIFY command.
-' The professional source with the same functionality has about 20% more code, all users that need best security should use the professional version or add the common protection functions to this code.
 '
-' The pre-defined AID in the source generates test cards with a constant serial number. If a user needs different serials, the AID in the source should be aligned. Users without manufacturer registration
-' from FSFE shall not change the manufacturer ID in the source and are only allowed to produce test cards (manufacturer ID = 0000 or FFFF).
-' Registered manufactures have special functions on their machines to provide unique serial numbers to OpenPGP smart cards.
+' The pre-defined AID in the source generates test cards with a constant serial number. If a user needs different serials, the AID in the source should be aligned.
+' Users/vendors without manufacturer registration from FSFE/Gnupg e. V. shall not change the manufacturer ID in the source and are only allowed to produce test cards (manufacturer ID = 0000 or FFFF).
+' Registered manufactures have special functions on their production machines to provide unique serial numbers to OpenPGP smart cards.
 
 '
 'DECLARATIONS:
@@ -57,6 +53,7 @@ Option Explicit
 Option Base 1
 #Files 0    'No file system
 #Include RSA.DEF
+#Include AES.DEF
 #Include MISC.DEF
 #Include Tlv12.DEF
 
@@ -91,10 +88,10 @@ Const MaxPWLength = 32
 
 ' EEPROM:
 ' AID (all cards are test cards with serial number set to zero)
-Eeprom AID As String*16 = &HD2,&H76,&H00,&H01,&H24,&H01,&H02,&H01,&H00,&H00,&H00,&H00,&H00,&H00,&H00,&H00
+Eeprom AID As String*16 = &HD2,&H76,&H00,&H01,&H24,&H01,&H02,&H02,&H00,&H00,&H00,&H00,&H00,&H00,&H00,&H00
 ' Sequence counter for signatures
 Eeprom Counter As String*3 = String$(3, 0)
-' Applikation passwords (1 + 3) with default values
+' Applikation passwords (1 and 3) with default values
 Eeprom EPW$(2) = "123456", "12345678"
 ' Error counter for Applikation PWs
 Eeprom PWFBZ(2) = FBZDef, FBZDef
@@ -147,7 +144,7 @@ Eeprom PU4$ = ""
 ' RAM:
 ' Flag for application selection
 Public AppSel = 0
-' Flags for correct PW check (1-3)
+' Flags for correct password check (1-3)
 Public PWchk(3) = 0,0,0
 
 ' FUNCTIONS:
@@ -194,7 +191,7 @@ Sub CardInit()
     RCFBZ = 0
     ' Resetting code
     PWRC$ = ""
-    ' Applikation PW (1 + 3) with default values
+    ' Applikation PW (1 and 3) with default values
     EPW$(1) = "123456" : EPW$(2) = "12345678"
     ' Error counter for application PWs
     PWFBZ(1) = FBZDef : PWFBZ(2) = FBZDef
@@ -221,26 +218,26 @@ End Function
 '
 '     CLA = 00
 '     INS = A4
-'     P1  = 04 - AID
-'     P2  = 00 - FCI
+'     P1  = 04-AID
+'     P2  = 00-FCI
 '
 Command &H00 &HA4 SelectFile(dat$)
   If P1P2 = &H0400 Then ' Select AID
     If (Lc < 1) Or (Lc > 16) Then SW1SW2 = &H6700 : Exit Command
     If dat$ = Left$(AID,len(dat$)) Then
-	  AppSel = 1
-      If LCS <> Chr$(&H05) Then dat$ = "": SW1SW2 = &H6285 : Exit Command  ' application terminated
-       ' FCP with AID and LifeCycleStatus
-	   dat$ = Chr$(&H62) + Chr$(21) + Chr$(&H84) + Chr$(16) + AID + Chr$(&H8A) + Chr$(1) + LCS
-       If LePresent() = 0 Then dat$ = ""
-	   ResponseLength = Len(dat$)
-	   If Le = 0 Then Le = ResponseLength
-	   If Le > ResponseLength Then Le = ResponseLength
-       If Le < ResponseLength Then dat$ = Left$(dat$, Le)
-	   SW1SW2 = &H9000
-	   Exit Command
+		AppSel = 1
+		If LCS <> Chr$(&H05) Then dat$ = "": SW1SW2 = &H6285 : Exit Command  ' Application termininated
+		' FCP with AID and LifeCycleStatus
+		dat$ = Chr$(&H62) + Chr$(21) + Chr$(&H84) + Chr$(16) + AID + Chr$(&H8A) + Chr$(1) + LCS
+		If LePresent() = 0 Then dat$ = ""
+		ResponseLength = Len(dat$)
+		If Le = 0 Then Le = ResponseLength
+		If Le > ResponseLength Then Le = ResponseLength
+		If Le < ResponseLength Then dat$ = Left$(dat$, Le)
+		SW1SW2 = &H9000
+		Exit Command
     Else
-    	SW1SW2 = &H6A82 : Exit Command  ' application not found
+    	SW1SW2 = &H6A82 : Exit Command
     End If
   End If
   SW1SW2 = &H6B00  ' P1/P2 error
@@ -251,7 +248,7 @@ End Command
 '
 '     CLA = 00
 '     INS = 20
-'     P1  = 00
+'     P1  = 00 / FF
 '     P2  = 81/82/83 -> Application PWx
 '
 Command &H00 &H20 Verify(dat$)
@@ -264,13 +261,13 @@ Command &H00 &H20 Verify(dat$)
   ' But the card must be written 2 times for every PIN check. This functionality (decrementing an error counter before checking and restoring later)
   ' was patent pending and every card manufacturer has to pay for it up to the beginning of the 21th century. This is typical for several smart card routines
   ' that help to protect the card against external hardware/software attacks.
-  ' Because the patent is expired, I can explain and use this mechanism in the source, but many other protections are still patent pending and under NDA...
+  ' Because the patent is expired, I can explain and use this mechanism in the source, but many other protections are still patent pending and under NDA.
   Private PWNr, AktPWNr
-  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command               ' PW not defined
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command        ' Application terminated
-  If P1 <> 0 Then SW1SW2 = &H6B00 : Exit Command                  ' P1/P2 Error
+  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command     ' PW not defined
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
+  If P1 <> 0 AND P1 <> &HFF Then SW1SW2 = &H6B00 : Exit Command    ' P1/P2 Error
   If (P2 And &HF0) <> &H80 Then SW1SW2 = &H6A88 : Exit Command    ' PW not defined
-  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command         ' Le error
+  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   PWNr = (P2 And &H0F)
   If (PWNr < 1) Or (PWNr > 3) Then SW1SW2 = &H6A88 : Exit Command ' PW not defined
   If (PWNr = 1) Or (PWNr = 2) Then
@@ -278,18 +275,35 @@ Command &H00 &H20 Verify(dat$)
   Else 
 	AktPWNr = 2
   End If
-  If PWFBZ(AktPWNr) = 0 Then SW1SW2 = &H6983 : Exit Command   ' PW blocked
-  ' Decrement FBZ
-  PWFBZ(AktPWNr) = PWFBZ(AktPWNr) - 1
-  PWchk(PWNr) = 0
-  If dat$ = EPW$(AktPWNr) Then
-	PWFBZ(AktPWNr) = FBZDef
-  	PWchk(PWNr) = 1
-	SW1SW2 = &H9000	  ' PW OK
+  If PWFBZ(AktPWNr) = 0 Then SW1SW2 = &H6983 : Exit Command ' PW blocked
+  If Lc > 0 Then
+  ' Password check
+    ' decrement FBZ and reset PW-Status
+    PWFBZ(AktPWNr) = PWFBZ(AktPWNr) - 1
+    PWchk(PWNr) = 0
+    If EPW$(AktPWNr) = dat$ Then
+      ' PW OK, then set FBZ and PW-Status
+      PWchk(PWNr) = 1
+      PWFBZ(AktPWNr) = FBZDef
+      dat$="" : SW1SW2 = &H9000
+    Else
+      SW1SW2 = &H6982	' PW wrong
+    End If
   Else
-    SW1SW2 = &H6982	  ' PW wrong
+  ' Get PW-Status or PW-Reset
+    Select Case P1
+      Case 00
+        If PWchk(PWNr) = 1 Then
+          dat$= "" : SW1SW2 = &H9000
+        Else
+          SW1 = &H63 : SW2 = &HC0 + PWFBZ(AktPWNr)
+        End If
+
+      Case &HFF
+        PWchk(PWNr) = 0
+        dat$="" : SW1SW2 = &H9000
+    End Select
   End If
-  dat$ = ""
 End Command
 
 '
@@ -303,24 +317,24 @@ End Command
 Command &H00 &H24 chgrd(dat$)
   Private PWNr
   Private PWalt$, PWneu$
-  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command ' PW not defined
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
-  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   If P1 <> 0 Then SW1SW2 = &H6B00 : Exit Command ' P1/P2 Error
   If (P2 And &HF0) <> &H80 Then SW1SW2 = &H6A88 : Exit Command ' PW not defined
+  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command ' PW not defined
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
+  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   PWNr = (P2 And &H0F)
   If (PWNr <> 1) And (PWNr <> 3) Then SW1SW2 = &H6A88 : Exit Command ' PW not defined
   If PWNr = 3 Then PWNr = 2  'Reference to Admin-PW in EPW$()
   If PWFBZ(PWNr) = 0 Then SW1SW2 = &H6983  : Exit Command ' PW blocked
-  If PWNr = 2 Then
-    If Len(dat$) < Len(EPW$(2)) + 8 Then SW1SW2 = &H6985 : Exit Command   ' New PW too short
-  Else
-    If Len(dat$) < Len(EPW$(1)) + 6 Then SW1SW2 = &H6985 : Exit Command   ' New PW too short
-  End If 
   PWalt$ = Left$(dat$, Len(EPW$(PWNr))) : PWneu$ = Right$(dat$, Len(dat$) - Len(EPW$(PWNr)))
+  If PWNr = 2 Then
+    If Len(PWneu$) < 8 Then SW1SW2 = &H6985 : Exit Command   ' New PW too short
+  Else
+    If Len(PWneu$) < 6 Then SW1SW2 = &H6985 : Exit Command   ' New PW too short
+  End If 
   If Len(PWneu$) > MaxPWLength Then SW1SW2 = &H6985 : Exit Command   ' New PW too long
-
-  ' First check PWalt
+  ' Check PWalt
+  ' Decrement FBZ and reset PW-Status
   PWFBZ(PWNr) = PWFBZ(PWNr) - 1
   If PWNr = 1 Then
     PWchk(1) = 0 : PWchk(2) = 0
@@ -328,20 +342,18 @@ Command &H00 &H24 chgrd(dat$)
     PWchk(3) = 0
   End If
   If PWalt$ = EPW$(PWNr) Then
-	PWFBZ(PWNr) = FBZDef
+    PWFBZ(PWNr) = FBZDef
     If PWNr = 1 Then
         PWchk(1) = 1
     Else
         PWchk(3) = 1
     End If
- 	SW1SW2 = &H9000	  ' PW OK
   Else
     SW1SW2 = &H6982	: Exit Command  ' PW wrong
   End If
-
-  ' Store new PW
+  ' Store new password
   EPW$(PWNr) = PWneu$
-  dat$=""
+  dat$="" : SW1SW2 = &H9000
 End Command
 
 '
@@ -349,37 +361,37 @@ End Command
 '
 '     CLA = 00
 '     INS = 2C
-'     P1  = 00/02 -> RC or with Admin-PW/SM
+'     P1  = 00/02 -> RC or Admin-PW
 '     P2  = 81 -> Application User-PW
 '
 Command &H00 &H2C ResReCount(dat$)
   Private PWalt$, PWneu$
   If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command ' PW not defined
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
-  If (P1 <> 0) And (P1 <> 2) Then SW1SW2 = &H6B00 : Exit Command ' P1/P2 Error
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
+  If (P1 <> 0) And (P1 <> 2) Then SW1SW2 = &H6B00 : Exit Command ' P1/P2 error
   If P2 <> &H81 Then SW1SW2 = &H6A88 : Exit Command ' PW not defined
   If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   If (P1 = 2) And (PWchk(3) = 0) Then SW1SW2 = &H6982 : Exit Command  	' No PW3 check
   If (P1 = 2) And (Lc < 6) Then SW1SW2 = &H6985 : Exit Command	' PW too short
   If (P1 = 2) And (Lc > MaxPWLength) Then SW1SW2 = &H6985 : Exit Command   ' New PW too long
   If (P1 = 0) And (PWRC$ = "") Then SW1SW2 = &H6A88 : Exit Command ' RC not defined
-  If (P1 = 0) And (Lc < 14) Then SW1SW2 = &H6985 : Exit Command	' PW too short
-  If P1 = 0 Then   ' Check RC
+  If P1 = 0 Then   ' RC prüfen
       If Lc < Len(PWRC$) + 6 Then SW1SW2 = &H6985 : Exit Command	' RC too short
       PWalt$ = Left$(dat$, Len(PWRC$)) : PWneu$ = Right$(dat$, Len(dat$) - Len(PWRC$))
-      If Len(PWneu$) < 6 Then SW1SW2 = &H6985 : Exit Command	' RC too short
+      If Len(PWneu$) < 6 Then SW1SW2 = &H6985 : Exit Command	' PW zu kurz
       If Len(PWneu$) > MaxPWLength Then SW1SW2 = &H6985 : Exit Command   ' New PW too long
       If RCFBZ = 0 Then SW1SW2 = &H6983  : Exit Command ' RC blocked
-        ' Check RC
+      ' RC check
       RCFBZ = RCFBZ - 1
-	  If PWalt$ = PWRC$ Then
-		RCFBZ = FBZDef
-	  Else
-		SW1SW2 = &H6982	: Exit Command  ' PW wrong
-	  End If
+      If PWalt$ = PWRC$ Then
+        RCFBZ = FBZDef
+        dat$ = PWneu$
+      Else
+        SW1SW2 = &H6982	: Exit Command  ' RC wrong
+      End If
   End If
   ' Store new User-PW
-  EPW$(1) = PWneu$
+  EPW$(1) = dat$
   PWFBZ(1) = FBZDef
   dat$="" : SW1SW2 = &H9000
 End Command
@@ -424,10 +436,10 @@ End Command
 Command &H00 &H47 genkey(dat$)
   Private proto, speed, ExtLe
   Private i, tmpe$
-  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
   If P2 <> 0 Then SW1SW2 = &H6B00 : Exit Command ' P1/P2 Error
   If (P1 <> &H80) And (P1 <> &H81) Then SW1SW2 = &H6B00 : Exit Command ' P1/P2 Error
+  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
   If Lc <> 2 Then SW1SW2 = &H6A80 : Exit Command ' Invalid data
   If Asc(dat$(2)) <> 0 Then SW1SW2 = &H6A80 : Exit Command ' Invalid data
   If (PWchk(3) = 0) And (P1 = &H80) Then SW1SW2 = &H6982 : Exit Command  	' No PW check
@@ -436,11 +448,13 @@ Command &H00 &H47 genkey(dat$)
         Case &HB6
             If (ExtLe = 0) And (ActRSALenSig > 1024) Then SW1SW2 = &H6700 : Exit Command	' Le Error, ExtLe expected
             If P1 = &H80 Then
-                 Call RsaExGenerateKey(ActRSALenSig, 0, 0, "", SigK$)
-                 Call RsaExPublicKey (SigK$, PubSigK$)
-                 Counter = String$(3,0)
+                Call RsaExGenerateKey(ActRSALenSig, 0, 0, "", SigK$)
+                Call RsaExPublicKey (SigK$, PubSigK$)
+                Counter = String$(3,0)
+				FPSig = String$(20,0)
+				GenDateSig = String$(4,0)
             End If
-            If SigK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not definined
+            If SigK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
             tmpe$ = GetAsnInteger(PubSigK$, 2) : dat$ = GetAsnInteger(PubSigK$, 1)
             While Len(tmpe$) < 4
                 tmpe$ = Chr$(0) + tmpe$
@@ -465,8 +479,10 @@ Command &H00 &H47 genkey(dat$)
         Case &HB8
             If (ExtLe = 0) And (ActRSALenDec > 1024) Then SW1SW2 = &H6700 : Exit Command	' Le Error, ExtLe expected
             If P1 = &H80 Then
-                 Call RsaExGenerateKey(ActRSALenDec, 0, 0, "", DecK$)
-                 Call RsaExPublicKey (DecK$, PubDecK$)
+                Call RsaExGenerateKey(ActRSALenDec, 0, 0, "", DecK$)
+                Call RsaExPublicKey (DecK$, PubDecK$)
+				FPDec = String$(20,0)
+				GenDateDec = String$(4,0)
             End If
             If DecK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
             tmpe$ = GetAsnInteger(PubDecK$, 2) : dat$ = GetAsnInteger(PubDecK$, 1)
@@ -493,8 +509,11 @@ Command &H00 &H47 genkey(dat$)
         Case &HA4
             If (ExtLe = 0) And (ActRSALenAut > 1024) Then SW1SW2 = &H6700 : Exit Command	' Le Error, ExtLe expected
             If P1 = &H80 Then
-                 Call RsaExGenerateKey(ActRSALenAut, 0, 0, "", AutK$)
-                 Call RsaExPublicKey (AutK$, PubAutK$)
+                Call RsaExGenerateKey(ActRSALenAut, 0, 0, "", AutK$)
+                Call RsaExPublicKey (AutK$, PubAutK$)
+				FPAut = String$(20,0)
+				GenDateAut = String$(4,0)
+				Zertifikat$ = ""
             End If
             If AutK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
             tmpe$ = GetAsnInteger(PubAutK$, 2) : dat$ = GetAsnInteger(PubAutK$, 1)
@@ -552,7 +571,7 @@ Command &H00 &H2A pso(dat$)
   Private x As Integer
   Private proto, speed, ExtLe
   If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command	' Key not found
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
   Call CommParams(proto, speed, ExtLe)
 
   Select Case P1P2
@@ -561,43 +580,57 @@ Command &H00 &H2A pso(dat$)
       If SigK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
       If PWchk(1) = 0 Then SW1SW2 = &H6982 : Exit Command   ' No PW check
       If (ExtLe = 0) And (ActRSALenSig > 2048) Then SW1SW2 = &H6700 : Exit Command	' Le Error, ExtLe expected
-      If Lc > ((ActRSALenSig / 8) * 0.4) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong length, more than 40% of modulus required
-      ' Formatting in compliance with PKCS#1
+      If Lc > ((ActRSALenSig / 8) * 0.4) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong length, more than 40% of modulus
+      ' PKCS#1 formatting
       dat$ = Chr$(0) + Chr$(1) + String$((ActRSALenSig / 8) - 3 - Lc, &HFF) + Chr$(0) + dat$
       Call RsaExDecryptRaw(dat$, SigK$)
 	   ' Increment Counter
       TC = Chr$(0) + Counter
-	    If TC1 >= &HFFFFFF Then
-        SW1SW2 = &H6F00 : Exit Command		' Counter expired
+	   If TC1 >= &HFFFFFF Then
+        SW1SW2 = &H6F00 : Exit Command		' Counter overflow
       Else
         TC1 = TC1 + 1
       End If
       Counter = Right$(TC,3)
-      If PW1once = Chr$(0) Then    ' Delete PW1 check flag
+      If PW1once = Chr$(0) Then    ' Delete PW1 status
          PWchk(1) = 0
       End If
 
     Case &H8086
-        If dat$(1) <> Chr$(0) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong Input
+        If dat$(1) <> Chr$(0) And dat$(1) <> Chr$(2) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong input
         If PWchk(2) = 0 Then SW1SW2 = &H6982 : Exit Command  	' No PW check
-        If dat$(1) = Chr$(0) Then
-            ' RSA Decrypt
-            If DecK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
-            If Lc <> ((ActRSALenDec / 8) + 1) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong length
-            dat$ = Right$(dat$, Len(dat$) - 1)
-            Call RsaExDecryptRaw(dat$, DecK$)
-            If dat$(1) <> Chr$(2) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong Input
-            x = 2
-            While Asc(dat$(x)) <> 0
-                x = x + 1
-                If x > ((ActRSALenDec / 8) - 2) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong Input
-            Wend
-            If x < 9 Then SW1SW2 = &H6985  : Exit Command	 ' Wrong Input
-            dat$ = Right$(dat$, (ActRSALenDec / 8) - 1 - x)
-        End If
+	    Select Case Asc(dat$(1))
+
+			Case &H00
+				' RSA Decrypt
+				If DecK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key nicht definiert
+				If Lc <> ((ActRSALenDec / 8) + 1) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong length
+				dat$ = Right$(dat$, Len(dat$) - 1)
+				Call RsaExDecryptRaw(dat$, DecK$)
+				If dat$(1) <> Chr$(2) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong input
+				x = 2
+				While Asc(dat$(x)) <> 0
+					x = x + 1
+					If x > ((ActRSALenDec / 8) - 2) Then SW1SW2 = &H6985  : Exit Command	 ' Wrong input
+				Wend
+				If x < 9 Then SW1SW2 = &H6985  : Exit Command	 ' Wrong input
+				dat$ = Right$(dat$, (ActRSALenDec / 8) - 1 - x)
+
+			Case &H02
+				' AESKeyDec Decrypt
+				If AESKeyDec$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
+				If Lc <> 17 Then SW1SW2 = &H6985  : Exit Command	 ' Wrong length
+				dat$ = Right$(dat$, Len(dat$) - 1)
+				If Len(AESKeyDec$) = 16 Then
+					dat$ = AES(-128, AESKeyDec$, dat$)
+				Else
+					dat$ = AES(-256, AESKeyDec$, dat$)
+				End If
+			
+		End Select
 
     Case Else
-        SW1SW2 = &H6B00 : Exit Command     ' P1/P2 Error
+        SW1SW2 = &H6B00 : Exit Command     ' P1/P2 error
 
   End Select
 
@@ -619,17 +652,17 @@ End Command
 '
 Command &H00 &H88 InternalAuthenticate(dat$)
   Private proto, speed, ExtLe
-  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command	' Key not found
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
-  If P1P2 <> 0 Then SW1SW2 = &H6B00  : Exit Command	' P1/P2 Error
+  If P1P2 <> 0 Then SW1SW2 = &H6B00  : Exit Command	' P1/P2 error
   If LePresent() = 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
+  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command	' Key not found
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
   Call CommParams(proto, speed, ExtLe)
   If AutK$ = "" Then SW1SW2 = &H6A88 : Exit Command ' Key not defined
   If (ExtLe = 0) And (ActRSALenAut > 2048) Then SW1SW2 = &H6700 : Exit Command	' Le Error, ExtLe expected
   If PWchk(2) = 0 Then SW1SW2 = &H6982 : Exit Command  	' No PW check
-  If Lc > ((ActRSALenAut / 8) * 0.4) Then SW1SW2 = &H6985  : Exit Command	' Wrong Length
+  If Lc > ((ActRSALenAut / 8) * 0.4) Then SW1SW2 = &H6985  : Exit Command	' Wrong length
 
-  ' Formatting in compliance with PKCS#1
+  ' PKCS#1 formatting
   dat$ = Chr$(0) + Chr$(1) + String$((ActRSALenAut / 8) - 3 - Lc, &HFF) + Chr$(0) + dat$
   Call RsaExDecryptRaw(dat$, AutK$)
 
@@ -650,9 +683,9 @@ End Command
 '
 Command &H00 &HCA Getdata(dat$)
   Private proto, speed, ExtLe
-  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command   ' DOs not defined
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
   If LePresent() = 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
+  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command   ' DOs not defined
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
   Call CommParams(proto, speed, ExtLe)
   If Lc > 0 Then SW1SW2 = &H6700  : Exit Command	' Wrong length
   Select Case P1P2
@@ -707,7 +740,7 @@ Command &H00 &HCA Getdata(dat$)
          dat$ = Zertifikat$
 
 	Case Else
-		 SW1SW2 = &H6A88  : Exit Command		' Data not found
+		 SW1SW2 = &H6A88  : Exit Command		' DO not found
 
   End Select
   ResponseLength = Len(dat$)
@@ -728,8 +761,8 @@ End Command
 Command &H00 &HDA Putdata(dat$)
   Private tmp$
   If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command         ' DOs not defined
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
-  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command   ' Le error
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
+  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   If (PWchk(3) = 0) And (P1P2 <> &H0101) And (P1P2 <> &H0103) Then SW1SW2 = &H6982 : Exit Command  	' No PW check
   If Lc = 0 Then dat$ = ""
   Select Case P1P2
@@ -743,7 +776,7 @@ Command &H00 &HDA Putdata(dat$)
         LoginData$ = dat$
 
 	Case &H5F2D
-        If Lc > 8 Then SW1SW2 = &H6700 : Exit Command           ' Wrong length
+        If Lc > 8 Then SW1SW2 = &H6700 : Exit Command             ' Wrong length
         If Lc Mod 2 <> 0 Then SW1SW2 = &H6985 : Exit Command	' Wrong format
         LangPref$ = dat$
 
@@ -841,13 +874,17 @@ Command &H00 &HDA Putdata(dat$)
         GenDateAut = dat$
 
       Case &H00D3
-        If Lc = 0 Then          ' Special use - delete RC
+        If Lc = 0 Then          ' Special case: delete RC
             PWRC$ = "" : RCFBZ = 0
         Else
-            If Lc < 8 Then SW1SW2 = &H6985 : Exit Command             ' RC too short
-            If Lc > MaxPWLength Then SW1SW2 = &H6985 : Exit Command   ' RC too long
+            If Lc < 8 Then SW1SW2 = &H6985 : Exit Command       ' RC too short
+            If Lc > MaxPWLength Then SW1SW2 = &H6985 : Exit Command       ' RC too long
             PWRC$ = dat$ : RCFBZ = FBZDef
         End If
+
+      Case &H00D5
+            If Lc <> 16 And Lc <> 32 Then SW1SW2 = &H6700 : Exit Command	' Wrong length
+            AESKeyDec$ = dat$
 
       Case &H7F21
             If Lc > 2048 Then SW1SW2 = &H6700 : Exit Command	' Wrong length
@@ -855,20 +892,20 @@ Command &H00 &HDA Putdata(dat$)
 
 	Case &H0101
         If PWchk(2) = 0 Then SW1SW2 = &H6982 : Exit Command  	' No PW check
-        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	        ' Wrong length
+        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	      ' Wrong length
         PU1$ = dat$
 
 	Case &H0102
-        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	  ' Wrong length
+        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	' Wrong length
         PU2$ = dat$
 
 	Case &H0103
         If PWchk(2) = 0 Then SW1SW2 = &H6982 : Exit Command  	' No PW check
-        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	        ' Wrong length
+        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	      ' Wrong length
         PU3$ = dat$
 
 	Case &H0104
-        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	  ' V
+        If Lc > 254 Then SW1SW2 = &H6700 : Exit Command	' Wrong length
         PU4$ = dat$
 
 	Case Else
@@ -893,10 +930,10 @@ Command &H00 &HDB PutdataOdd(dat$)
   Private Check3072 As String*16 = &H7F,&H48,&H08,&H91,&H04,&H92,&H81,&HC0,&H93,&H81,&HC0,&H5F,&H48,&H82,&H01,&H84
   Private Check4096 As String*18 = &H7F,&H48,&H0A,&H91,&H04,&H92,&H82,&H01,&H00,&H93,&H82,&H01,&H00,&H5F,&H48,&H82,&H02,&H04
   If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command         ' DOs not defined
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
-  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command   ' Le error
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
+  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   If P1P2 <> &H3FFF Then SW1SW2 = &H6B00  : Exit Command	' P1/P2 Error
-  If PWchk(3) = 0 Then SW1SW2 = &H6982 : Exit Command  	    ' No PW check
+  If PWchk(3) = 0 Then SW1SW2 = &H6982 : Exit Command  	' No PW check
   If Left$(dat$, 2) <> Chr$(&H4D, &H81) And Left$(dat$, 2) <> Chr$(&H4D, &H82) Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
   If Mid$(dat$, 2, 1) = Chr$(&H82) Then
       If Mid$(dat$, 3, 2) <> Chr$((Lc - 4) / 256) + Chr$((Lc - 4) mod 256) Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
@@ -921,15 +958,15 @@ Command &H00 &HDB PutdataOdd(dat$)
         If ActRSALenSig = 2048 Then dat$ = Right$(dat$, 260) : If Len(dat$) <> 260 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
         If ActRSALenSig = 3072 Then dat$ = Right$(dat$, 388) : If Len(dat$) <> 388 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
         If ActRSALenSig = 4096 Then dat$ = Right$(dat$, 516) : If Len(dat$) <> 516 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
-        ' store e
+        ' e backup
         e$ = Left$(dat$, 4) : dat$ = Right$(dat$, Len(dat$) - 4)
-        ' store p
+        ' p backup
         p$ = Left$(dat$, ActRSALenSig / 16)
-        ' Remainder of dat$ is q
+        ' Rest of dat$ is q
         dat$ = Right$(dat$, ActRSALenSig / 16)
         ' Calculate new CRT-Key from p, q and e
         Call RsaExConstructKey (p$, dat$, e$, SigK$)
-        ' Generate PubKey, delete relevant DOs with old content
+        ' Generate PubKey, delete relevant DOs with old data
         Call RsaExPublicKey (SigK$, PubSigK$)
         Counter = String$(3,0)
         FPSig = String$(20,0)
@@ -944,37 +981,37 @@ Command &H00 &HDB PutdataOdd(dat$)
         If ActRSALenDec = 2048 Then dat$ = Right$(dat$, 260) : If Len(dat$) <> 260 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
         If ActRSALenDec = 3072 Then dat$ = Right$(dat$, 388) : If Len(dat$) <> 388 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
         If ActRSALenDec = 4096 Then dat$ = Right$(dat$, 516) : If Len(dat$) <> 516 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
-        ' store e
+        ' e backup
         e$ = Left$(dat$, 4) : dat$ = Right$(dat$, Len(dat$) - 4)
-        ' store p
+        ' p backup
         p$ = Left$(dat$, ActRSALenDec / 16)
-        ' Remainder of dat$ is q
+        ' Rest of dat$ is q
         dat$ = Right$(dat$, ActRSALenDec / 16)
         ' Calculate new CRT-Key from p, q and e
         Call RsaExConstructKey (p$, dat$, e$, DecK$)
-        ' Generate PubKey, delete relevant DOs with old content
+        ' Generate PubKey, delete relevant DOs with old data
         Call RsaExPublicKey (DecK$, PubDecK$)
         FPDec = String$(20,0)
         GenDateDec = String$(4,0)
 
 	Case &HA4
-        If (ActRSALenAut = 1024) And (Left$(dat$, 13) <> Check1024) Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        If (ActRSALenAut = 2048) And (Left$(dat$, 16) <> Check2048) Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        If (ActRSALenAut = 3072) And (Left$(dat$, 16) <> Check3072) Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        If (ActRSALenAut = 4096) And (Left$(dat$, 18) <> Check4096) Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        If ActRSALenAut = 1024 Then dat$ = Right$(dat$, 132) : If Len(dat$) <> 132 Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        If ActRSALenAut = 2048 Then dat$ = Right$(dat$, 260) : If Len(dat$) <> 260 Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        If ActRSALenAut = 3072 Then dat$ = Right$(dat$, 388) : If Len(dat$) <> 388 Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        If ActRSALenAut = 4096 Then dat$ = Right$(dat$, 516) : If Len(dat$) <> 516 Then SW1SW2 = &H6A80  : Exit Command	' Falsche Parameter im Datenblock
-        ' store e
+        If (ActRSALenAut = 1024) And (Left$(dat$, 13) <> Check1024) Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        If (ActRSALenAut = 2048) And (Left$(dat$, 16) <> Check2048) Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        If (ActRSALenAut = 3072) And (Left$(dat$, 16) <> Check3072) Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        If (ActRSALenAut = 4096) And (Left$(dat$, 18) <> Check4096) Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        If ActRSALenAut = 1024 Then dat$ = Right$(dat$, 132) : If Len(dat$) <> 132 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        If ActRSALenAut = 2048 Then dat$ = Right$(dat$, 260) : If Len(dat$) <> 260 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        If ActRSALenAut = 3072 Then dat$ = Right$(dat$, 388) : If Len(dat$) <> 388 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        If ActRSALenAut = 4096 Then dat$ = Right$(dat$, 516) : If Len(dat$) <> 516 Then SW1SW2 = &H6A80  : Exit Command	' Wrong parameter in data
+        ' e backup
         e$ = Left$(dat$, 4) : dat$ = Right$(dat$, Len(dat$) - 4)
-        ' store p
+        ' p backup
         p$ = Left$(dat$, ActRSALenAut / 16)
-        ' Remainder of dat$ is q
+        ' Rest von dat$ ist q
         dat$ = Right$(dat$, ActRSALenAut / 16)
         ' Calculate new CRT-Key from p, q and e
         Call RsaExConstructKey (p$, dat$, e$, AutK$)
-        ' Generate PubKey, delete relevant DOs with old content
+        ' Generate PubKey, delete relevant DOs with old data
         Call RsaExPublicKey (AutK$, PubAutK$)
         FPAut = String$(20,0)
         GenDateAut = String$(4,0)
@@ -998,15 +1035,15 @@ End Command
 Command &H00 &HE6 TermDF(dat$)
   Private AdmPWdef
   AdmPWdef = 0
-  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command         ' Application not selected
-  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' Application terminated
-  If P1P2 <> 0 Then SW1SW2 = &H6B00 : Exit Command          ' P1/P2 Error
-  If Lc > 0 Then SW1SW2 = &H6700 : Exit Command	            ' Lc Error
-  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command   ' Le error
+  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command   ' App not selected
+  If LCS <> Chr$(&H05) Then SW1SW2 = &H6285 : Exit Command  ' App terminated
+  If P1P2 <> 0 Then SW1SW2 = &H6B00 : Exit Command    ' P1/P2 Error
+  If Lc > 0 Then SW1SW2 = &H6700 : Exit Command	      ' Lc Error
+  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   ' Check for unusable Admin-PW
   If PWFBZ(2) = 0 Then AdmPWdef = 1
   If PWchk(3) = 0 And AdmPWdef = 0 Then SW1SW2 = &H6982 : Exit Command  	' No PW check
-  LCS = Chr$(&H03)    ' Set LifeCycleStatus to Initialisation State
+  LCS = Chr$(&H03)    ' Set LifeCycleStatus to Initialisation state
   dat$ = "" : SW1SW2 = &H9000
 End Command
 
@@ -1019,25 +1056,23 @@ End Command
 '     P2  = 00
 '
 Command &H00 &H44 ActFile(dat$)
-  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command        ' Application not selected
-  If P1P2 <> 0 Then SW1SW2 = &H6B00 : Exit Command         ' P1/P2 Error
-  If Lc > 0 Then SW1SW2 = &H6700 : Exit Command	           ' Lc Error
-  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command  ' Le error
+  If AppSel = 0 Then SW1SW2 = &H6A88 : Exit Command   ' App not selected
+  If P1P2 <> 0 Then SW1SW2 = &H6B00 : Exit Command    ' P1/P2 Error
+  If Lc > 0 Then SW1SW2 = &H6700 : Exit Command	      ' Lc Error
+  If LePresent() <> 0 Then SW1SW2 = &H6700 : Exit Command ' Le error
   If LCS = Chr$(&H03) Then Call CardInit
   dat$ = "" : SW1SW2 = &H9000
 End Command
 
-' General handling of unknown commands
+
 Command Else unknown(dat$)
   If CLA <> 0 Then
 	SW1SW2 = &H6E00	'Unknown CLA
-      If (CLA And &H10) = &H10 Then SW1SW2 = &H6884         'Chaining not supported
-      If (CLA And &H03) > 0 Then SW1SW2 = &H6881            'Logical channels not supported
-      If (CLA And &H0C) > 0 Then SW1SW2 = &H6882            'SM not supported
+    If (CLA And &H10) = &H10 Then SW1SW2 = &H6884         'Chaining not supported
+    If (CLA And &H03) > 0 Then SW1SW2 = &H6881            'Logical channels not supported
+    If (CLA And &H0C) > 0 Then SW1SW2 = &H6882            'SM not supported
   Else
-	SW1SW2 = &H6D00	' Unknown INS
+	SW1SW2 = &H6D00	'Unknown INS
   End If
 End Command
 
-' End of source
-'
